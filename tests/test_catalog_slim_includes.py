@@ -39,6 +39,15 @@ import catalog  # noqa: E402
 # never named in a record's slim.includes.
 SHARED_OS_RECIPE = "slim.yml"
 
+# Fragments no catalog record composes because their consumers are other
+# projects that junction this one: the printer applications include
+# `fsdk-containers.bst:include/slim-printing.yml` (#341). Each is anchored to
+# the skill that states its consumer contract, so it cannot rot unreferenced
+# either; tests/test_slim_printing.py proves the recipe itself.
+JUNCTION_CONSUMED = {
+    "slim-printing.yml": ROOT / "docs" / "skills" / "printing-base.md",
+}
+
 
 def _fragments_claimed_by_records():
     """{fragment filename: [record names that include it]}."""
@@ -95,7 +104,7 @@ class SlimIncludesResolveTests(unittest.TestCase):
         on_disk = sorted(
             path.name
             for path in INCLUDE_DIR.glob("slim-*.yml")
-            if path.name != SHARED_OS_RECIPE
+            if path.name != SHARED_OS_RECIPE and path.name not in JUNCTION_CONSUMED
         )
         unreferenced = [name for name in on_disk if name not in claimed]
         self.assertEqual(
@@ -105,5 +114,19 @@ class SlimIncludesResolveTests(unittest.TestCase):
             "catalog record lists them in slim.includes, so nothing composes "
             "them into an image: "
             f"{unreferenced}. Wire each one into the record it was written "
-            "for, or delete it.",
+            "for, list it in JUNCTION_CONSUMED with its contract doc, or "
+            "delete it.",
         )
+
+    def test_junction_consumed_fragments_are_in_their_consumer_contract(self):
+        for fragment, contract in sorted(JUNCTION_CONSUMED.items()):
+            with self.subTest(fragment=fragment):
+                self.assertTrue((INCLUDE_DIR / fragment).is_file())
+                variable = _variable_name(fragment)
+                self.assertIn(variable, yaml.safe_load((INCLUDE_DIR / fragment).read_text()))
+                self.assertIn(
+                    f"include/{fragment}",
+                    contract.read_text(),
+                    f"{contract.relative_to(ROOT)} must tell consumers to "
+                    f"include {fragment}; nothing in this repository does.",
+                )

@@ -1,7 +1,7 @@
 ---
 name: slim-an-image
-version: "1.3"
-last_updated: "2026-09-18"
+version: "1.4"
+last_updated: "2026-09-26"
 id: slim-an-image
 one_line_purpose: Shrink an OCI image by extending the shared SLIM recipe and proving the removal.
 entry_point: docs/skills/slim-an-image/SKILL.md
@@ -60,7 +60,7 @@ rm -rf _sizecheck
 | Reference | What is in it |
 | --- | --- |
 | [`references/os-layer-recipe.md`](references/os-layer-recipe.md) | Why the recipe is manual, the split-domain leak trap, why every image (even an intended-static one) must run it, the risk tiers of what to cut, and the no-`find` sandbox constraint. |
-| [`references/runtime-family-recipes.md`](references/runtime-family-recipes.md) | The payload layer: the per-family strip/keep table (JVM, Python, Node, Go, C daemons), the implemented Python recipe, where `include/slim-<family>.yml` fragments live, smoke-test and measurement methodology, and the open zstd decision. |
+| [`references/runtime-family-recipes.md`](references/runtime-family-recipes.md) | The payload layer: the per-family strip/keep table (JVM, Python, Node, Go, C daemons, printing), the implemented Python and printing recipes, where `include/slim-<family>.yml` fragments live (including junction-consumed ones with their own gate), smoke-test and measurement methodology, and the open zstd decision. |
 | [`references/prebuilt-binaries.md`](references/prebuilt-binaries.md) | Stripping vendored upstream binaries: measured Argo/kubectl numbers, `strip-binaries: ""` plus the binutils build dep, and the `just verify` execution checks. |
 
 ## Lock it in

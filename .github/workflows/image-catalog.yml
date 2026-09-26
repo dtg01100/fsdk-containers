@@ -17,6 +17,11 @@ on:
       - 'tests/test_catalog*.py'
       - 'tests/test_generated*.py'
       - 'tests/test_verify_contract*.py'
+      # test_catalog_slim_includes.py and test_slim*.py gate the shared slim
+      # fragments (include/slim*.yml): the printing one is consumed across the
+      # junction, so nothing else in this repository ever runs it.
+      - 'include/**'
+      - 'tests/test_slim*.py'
       - '.github/requirements/**'
       # test_catalog_ci_inventory.py (run below via test_catalog*.py) gates the
       # workflow/action inventory against docs/skills/ci-tooling/references/.
@@ -45,6 +50,8 @@ on:
       - 'tests/test_catalog*.py'
       - 'tests/test_generated*.py'
       - 'tests/test_verify_contract*.py'
+      - 'include/**'
+      - 'tests/test_slim*.py'
       - '.github/requirements/**'
       - '.github/workflows/**'
       - '.github/actions/**'
@@ -81,3 +88,6 @@ jobs:
 
       - name: Generated elements match their records semantically
         run: python3 -m unittest discover -s tests -p 'test_generated*.py' -v
+
+      - name: Shared slim fragments remove what their gates forbid
+        run: python3 -m unittest discover -s tests -p 'test_slim*.py' -v

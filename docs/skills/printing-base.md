@@ -1,7 +1,7 @@
 ---
 name: printing-base
-version: "1.1"
-last_updated: 2026-09-25
+version: "1.2"
+last_updated: 2026-09-26
 id: printing-base
 one_line_purpose: Build, publish, and consume the shared printing base (printing/base.bst) for the printer applications.
 entry_point: docs/skills/printing-base.md
@@ -11,7 +11,7 @@ optimization_status: draft
 status: active
 dependencies: [bst-junctions, signing-and-sbom]
 tags: [buildstream, printing, cups, junctions, cache-keys, supply-chain]
-description: "The shared printing base for the printer applications: printing/base.bst contents, cache-key isolation of its FSDK patch, the signed printing-base-devel CAS bundle, and the consumer contract."
+description: "The shared printing base for the printer applications: printing/base.bst, cache-key isolation of its FSDK patch, the signed printing-base-devel bundle, the consumer contract, and the shared slim recipe with its gate."
 metadata:
   type: reference
   context7-sources:
@@ -158,6 +158,107 @@ has no catalog record.
          -o -name '*.a' -o -name '*.la' -o -type d -name pkgconfig -o -type d -name cmake \) -print -quit)"
    [ -z "${bad}" ] || { echo "devel content in ${IMAGE}: ${bad}" >&2; exit 1; }
    ```
+
+6. Apply the shared slim recipe and keep its gate. Include
+   `include/slim-printing.yml` across the junction in the OCI script
+   element and run its two variables before `build-oci`:
+
+   ```yaml
+   variables:
+     (@):
+       - fsdk-containers.bst:include/slim-printing.yml
+   config:
+     commands:
+       - "%{slim-printing-commands}"
+       - "%{slim-printing-gate-commands}"
+       - |
+         ... the app's own edits to /layer, then build-oci ...
+   ```
+
+   The gate fails the element if any path in
+   `%{slim-printing-forbidden-paths}` survived, so a bump that stages a
+   removed file again fails at build time on both arches. `just verify` must
+   re-check the same list against the exported rootfs; the list is read from
+   the element, so it moves with the junction pin:
+
+   ```bash
+   just bst show --deps none --format '%{vars}' oci/<app>.bst \
+     | python3 -c 'import sys, yaml; print(yaml.safe_load(sys.stdin)["slim-printing-forbidden-paths"])' \
+     > _slim-forbidden        # project-relative: the bst container only sees /src
+   root="$(mktemp -d)"; podman export "$(podman create "${IMAGE}" /none)" | tar -C "${root}" -xf -
+   shopt -s nullglob globstar; bad=0
+   while IFS= read -r pattern; do
+     [ -n "${pattern}" ] || continue
+     for match in "${root}"/${pattern}; do
+       # nullglob drops unmatched globs, not literal entries such as usr/bin/uconv
+       [ -e "${match}" ] || [ -L "${match}" ] || continue
+       echo "forbidden path in ${IMAGE}: ${match#"${root}"}" >&2; bad=1
+     done
+   done < _slim-forbidden
+   rm -f _slim-forbidden; [ "${bad}" -eq 0 ]
+   ```
+
+   Put the app's own removals in the OCI element *after* the shared recipe
+   and pair each with a line in the app's own forbidden list, never by
+   editing the shared one.
+
+## Shared slim recipe — `include/slim-printing.yml`
+
+The printer appliances are not distroless (bash entrypoint, pyppd PPD
+archives are Python executables), so they cannot use
+`slim-distroless-commands`. `include/slim-printing.yml` is their family
+recipe: the OS-layer block of `include/slim.yml` minus the shell removal,
+plus the runtime-closure bloat every printer app inherits from
+`public-stacks/runtime-gnu.bst`. Measured 2026-09-26 against the published
+amd64 images (rootfs extracted from the registry, removed bytes uncompressed):
+
+| Removed | ghostscript | hplip | gutenprint |
+|---|---|---|---|
+| ICU (`libicudata` 31.6 MiB) + `libxml2` + `libharfbuzz-icu`, their CLIs and Python bindings | 42.3 | 42.3 | 42.3 |
+| gcc sanitizer / Fortran / quadmath runtimes | 9.2 | 9.2 | 9.2 |
+| Python `.opt-1.pyc` / `.opt-2.pyc` | 19.6 | 25.9 | — |
+| Python stdlib tail (`ensurepip`, `_pyrepl`, `pydoc_data`, `unittest`, …) + `setuptools`/`mako`/`markdown`/`markupsafe` | 4.1 | 12.6 | — |
+| gconv long tail, `usr/share/i18n` localedef inputs, `locale-archive` | 7.8 | 7.8 | 22.8 |
+| runtime-gnu CLIs no printer path executes (ICU/gi/fc/hb/jpeg/tiff/webp/gnutls/selinux tools, `sqlite3`, `openssl`, …) | 13.2 | 13.2 | 13.0 |
+| libraries outside every app's NEEDED closure (`libhwy_contrib`, `libturbojpeg`, `libharfbuzz-subset`, `libsepol`, C++ wrappers, xcb extensions, …) | 11.9 | 11.9 | 11.9 |
+| **Total** | **108.0** | **122.8** | **99.2** |
+
+Rootfs 407 → 299 MiB (ghostscript), 499 → 375 (hplip), 419 → 320
+(gutenprint). After the recipe every remaining ELF's `NEEDED` still
+resolves, and `gs`, `foomatic-rip`, `pdftops`, `ippfind`, `dbus-daemon`,
+`avahi-daemon`, `curl`, `gpg`, `hp-probe`, the pyppd archives (`list`/`cat`)
+and `python3` importing `distro`, `dbus`, `gi`, `cairo`, `PIL` behave the
+same before and after.
+
+Why ICU can go: its only consumers are the ICU CLIs, `libharfbuzz-icu` and
+`libxml2`, and `libxml2`'s only consumers are `xmllint`/`xmlcatalog` and the
+Python bindings. Gutenprint parses XML with its bundled mxml; fontconfig,
+avahi, dbus and pyexpat link expat. A `readelf -d` NEEDED walk over every
+executable, filter, backend and Python extension in the three images shows
+nothing else reaching it.
+
+What the shared recipe deliberately does **not** touch, because at least one
+app needs it: `libcairo`/`libpixman`/`libgio`/`libgobject`/`libgirepository`
+(HPLIP's pygobject + pycairo), `libgcrypt` and `libsqlite3` (HPLIP's gpg),
+poppler's CLIs (`pdftops` is cups-filters' hybrid renderer), `libX11`
+(Ghostscript's X devices, #340), `usr/share/locale` (gutenprint keeps the
+domain for translated PPDs), `usr/share/misc/magic.mgc` (`file`, ghostscript
+only), perl and `which` (HPLIP). Those are per-app removals for the app's own
+OCI element. glibc NSS modules, p11-kit trust modules, OpenSSL providers and
+`libmvec` are dlopen'd and invisible to a NEEDED walk: never add them.
+
+The remaining lever is the closure itself: every consumer stack depends on
+`public-stacks/runtime-gnu.bst` wholesale, so the recipe deletes what a
+narrower component set would never stage. Replacing it with the components
+each app actually needs is consumer work, measured per app with
+`podman export` + `readelf -d`, and it shrinks the recipe's job rather than
+changing its contract.
+
+`tests/test_slim_printing.py` runs the recipe and the gate against a
+synthetic layer holding one instance of every forbidden glob plus a keep-list
+of what the apps need, and proves the gate fails closed. It is the only thing
+in this repository that executes the fragment; `just catalog-check` and
+`image-catalog.yml` run it.
 
 ## Consumer CI wiring — the junction tracker
 

@@ -1,0 +1,389 @@
+# Shared slim recipe for the printer applications (projectbluefin/fsdk-containers#341).
+#
+# Consumers (ghostscript-, hplip-, gutenprint-, ps-printer-app) include this
+# across the junction, under their OCI script element's variables: mapping:
+#
+#   variables:
+#     (@):
+#       - fsdk-containers.bst:include/slim-printing.yml
+#   config:
+#     commands:
+#       - "%{slim-printing-commands}"
+#       - "%{slim-printing-gate-commands}"
+#       - ... build-oci ...
+#
+# This is the printing family's equivalent of include/slim.yml +
+# include/slim-python.yml for the catalog images. It is self-contained on
+# purpose: the printer appliances are NOT distroless (the entrypoint is bash,
+# pyppd PPD archives are Python executables), so slim-distroless-commands
+# cannot be reused as-is, and one file is what a consumer pins and reviews.
+# The OS-layer part mirrors slim.yml minus the shell removal; keep the two in
+# step when slim.yml changes.
+#
+# Scope rule: remove only what no printer application can reach at runtime.
+# Every removal below is either build-only tooling or outside the NEEDED
+# closure of every executable, filter, backend, Python extension and dlopen
+# module that stays, measured 2026-09-26 on the published amd64 ghostscript,
+# hplip and gutenprint images (the issue carries the per-item sizes). What
+# only ONE app can drop (libcairo/libgio/libgcrypt/libsqlite3 are unreachable
+# for ghostscript but are HPLIP's declared runtime via pygobject/gnupg/python)
+# belongs in that app's own OCI script, not here.
+#
+# Kept on purpose: bash and coreutils (entrypoint), python3 with its stdlib
+# and plain .pyc (pyppd archives, HPLIP), curl (HPLIP plugin download), gpg
+# (HPLIP plugin verification), perl and which where a consumer stages them,
+# glibc NSS modules, p11-kit trust modules, OpenSSL providers/engines,
+# libmvec, gconv's common charsets, tzdata, CA certificates, terminfo,
+# usr/share/locale (gutenprint ships translated PPDs and keeps the domain),
+# and the compiled C.utf8 / en_US.utf8 locales under usr/lib/locale.
+#
+# The oci-builder sandbox has no `find`: bash globs only (globstar for the
+# .pyc walk). `slim-printing-forbidden-paths` is the machine-readable list of
+# what this recipe guarantees is gone; the gate re-checks it in the sandbox,
+# and a consumer's `just verify` re-checks it against the exported rootfs
+# (docs/skills/printing-base.md, consumer contract rule 6). Every rm below
+# has a line in that list; every line in that list is covered by an rm here.
+# tests/test_slim_printing.py holds the two sides together.
+
+slim-printing-commands: |
+  set -eu
+  L=/layer
+  shopt -s nullglob globstar
+
+  # ── OS layer (slim.yml's distroless block, minus the shells) ────────────
+  # Sanitizer / Fortran / quadmath runtimes: gcc split-domain leftovers no
+  # printer binary links.
+  rm -f "$L"/usr/lib/*/libasan.so* "$L"/usr/lib/*/libtsan.so* \
+        "$L"/usr/lib/*/liblsan.so* "$L"/usr/lib/*/libubsan.so* \
+        "$L"/usr/lib/*/libhwasan.so* "$L"/usr/lib/*/libgfortran.so* \
+        "$L"/usr/lib/*/libquadmath.so*
+
+  # Separated DWARF leaks the `debug` split domain (slim.yml, #316).
+  rm -rf "$L"/usr/lib/debug
+
+  # Keep common character sets; remove the gconv long tail.
+  for g in "$L"/usr/lib/*/gconv; do
+    [ -d "$g" ] || continue
+    for f in "$g"/*; do
+      [ -f "$f" ] || continue
+      case "${f##*/}" in
+        gconv-modules*|UTF*|UNICODE*|ISO8859-1.so|ISO8859-15.so|CP1252.so|ANSI_X3.110.so) : ;;
+        *) rm -f "$f" ;;
+      esac
+    done
+  done
+
+  # localedef inputs and glibc's build/admin tools. The compiled locales
+  # under usr/lib/locale/<name> stay; only the monolithic archive goes.
+  rm -f "$L"/usr/lib/locale/locale-archive
+  rm -rf "$L"/usr/share/i18n/charmaps "$L"/usr/share/i18n/locales
+  rm -f "$L"/usr/bin/localedef "$L"/usr/bin/sln "$L"/usr/bin/iconvconfig \
+        "$L"/usr/bin/ldconfig "$L"/usr/sbin/ldconfig "$L"/usr/bin/makedb \
+        "$L"/usr/bin/nscd "$L"/usr/bin/sprof "$L"/usr/bin/pldd \
+        "$L"/usr/bin/zic "$L"/usr/bin/zdump \
+        "$L"/usr/bin/pcre2test "$L"/usr/bin/pcre2grep
+  rm -f "$L"/usr/lib/*/libpcre2-16.so* "$L"/usr/lib/*/libpcre2-32.so* \
+        "$L"/usr/lib/*/libpcre2-posix.so*
+
+  # ── ICU (the single biggest item: libicudata alone is 31.6 MiB) ────────
+  # Its only consumers are the ICU CLIs, libharfbuzz-icu and libxml2, and
+  # libxml2's only consumers are xmllint/xmlcatalog and the Python bindings
+  # (gutenprint parses XML with its bundled mxml; fontconfig, avahi, dbus and
+  # pyexpat use expat). None of them is on any app's runtime path.
+  # usr/share/icu (44 KiB: ICU's LICENSE and build scaffolding) stays; this
+  # repo never deletes license texts.
+  rm -f "$L"/usr/lib/*/libicu*.so* "$L"/usr/lib/*/libharfbuzz-icu.so* \
+        "$L"/usr/lib/*/libxml2.so* \
+        "$L"/usr/lib/*/girepository-1.0/libxml2-2.0.typelib
+  rm -f "$L"/usr/bin/derb "$L"/usr/bin/escapesrc "$L"/usr/bin/genbrk \
+        "$L"/usr/bin/genccode "$L"/usr/bin/gencfu "$L"/usr/bin/gencmn \
+        "$L"/usr/bin/gencnval "$L"/usr/bin/gendict "$L"/usr/bin/gennorm2 \
+        "$L"/usr/bin/genrb "$L"/usr/bin/gensprep "$L"/usr/bin/icuexportdata \
+        "$L"/usr/bin/icuinfo "$L"/usr/bin/icupkg "$L"/usr/bin/makeconv \
+        "$L"/usr/bin/pkgdata "$L"/usr/bin/uconv \
+        "$L"/usr/bin/xmllint "$L"/usr/bin/xmlcatalog
+  rm -f "$L"/usr/lib/python3*/site-packages/libxml2.py \
+        "$L"/usr/lib/python3*/site-packages/drv_libxml2.py \
+        "$L"/usr/lib/python3*/site-packages/libxml2mod*.so \
+        "$L"/usr/lib/python3*/site-packages/__pycache__/libxml2.*.pyc \
+        "$L"/usr/lib/python3*/site-packages/__pycache__/drv_libxml2.*.pyc
+
+  # ── Python payload (interpreter, stdlib and plain .pyc stay) ────────────
+  # Python only loads .opt-1.pyc / .opt-2.pyc under -O / -OO; nothing here
+  # runs optimised, so they are dead weight (20-27 MiB per image).
+  rm -f "$L"/usr/**/__pycache__/*.opt-[12].pyc
+
+  # Stdlib subtrees with no runtime role in an appliance: the test suite,
+  # pip bootstrap, GUI/IDE front-ends, the interactive REPL, pydoc's help
+  # bundle, unittest, lib2to3, and the C-extension build scaffolding.
+  rm -rf "$L"/usr/lib/python3*/test "$L"/usr/lib/python3*/*/test \
+         "$L"/usr/lib/python3*/*/tests \
+         "$L"/usr/lib/python3*/ensurepip \
+         "$L"/usr/lib/python3*/idlelib "$L"/usr/lib/python3*/tkinter \
+         "$L"/usr/lib/python3*/turtledemo "$L"/usr/lib/python3*/turtle.py \
+         "$L"/usr/lib/python3*/_pyrepl \
+         "$L"/usr/lib/python3*/pydoc_data \
+         "$L"/usr/lib/python3*/unittest \
+         "$L"/usr/lib/python3*/lib2to3 "$L"/usr/lib/python3*/__phello__ \
+         "$L"/usr/lib/python3*/config-* "$L"/usr/lib/python3*/*/config-*
+  rm -f "$L"/usr/lib/python3*/*.a "$L"/usr/lib/python3*/*/*.a \
+        "$L"/usr/bin/pydoc "$L"/usr/bin/pydoc3 "$L"/usr/bin/pydoc3.* \
+        "$L"/usr/bin/python3*-config
+
+  # Build-only site-packages: setuptools (pyproject builds), mako/markdown/
+  # markupsafe (g-ir-scanner templates). Their console scripts go with them.
+  rm -rf "$L"/usr/lib/python3*/site-packages/setuptools \
+         "$L"/usr/lib/python3*/site-packages/setuptools-*.dist-info \
+         "$L"/usr/lib/python3*/site-packages/pkg_resources \
+         "$L"/usr/lib/python3*/site-packages/_distutils_hack \
+         "$L"/usr/lib/python3*/site-packages/distutils-precedence.pth \
+         "$L"/usr/lib/python3*/site-packages/mako \
+         "$L"/usr/lib/python3*/site-packages/mako-*.dist-info \
+         "$L"/usr/lib/python3*/site-packages/markdown \
+         "$L"/usr/lib/python3*/site-packages/markdown-*.dist-info \
+         "$L"/usr/lib/python3*/site-packages/markupsafe \
+         "$L"/usr/lib/python3*/site-packages/markupsafe-*.dist-info
+  rm -f "$L"/usr/bin/mako-render "$L"/usr/bin/markdown_py \
+        "$L"/usr/bin/psl-make-dafsa
+
+  # ── runtime-gnu CLIs no printer path executes ───────────────────────────
+  # Library test/demo/conversion tools that ride in with their library's
+  # runtime domain. The libraries stay; only the front-ends go.
+  rm -f "$L"/usr/bin/sqlite3 "$L"/usr/bin/openssl \
+        "$L"/usr/bin/zstd "$L"/usr/bin/zstdcat "$L"/usr/bin/zstdgrep \
+        "$L"/usr/bin/zstdless "$L"/usr/bin/zstdmt "$L"/usr/bin/unzstd \
+        "$L"/usr/bin/lz4 "$L"/usr/bin/lz4c "$L"/usr/bin/lz4cat "$L"/usr/bin/unlz4 \
+        "$L"/usr/bin/lzip "$L"/usr/bin/lzmadec "$L"/usr/bin/lzmainfo "$L"/usr/bin/xzdec
+  rm -f "$L"/usr/bin/certtool "$L"/usr/bin/ocsptool "$L"/usr/bin/p11tool \
+        "$L"/usr/bin/psktool "$L"/usr/bin/srptool "$L"/usr/bin/danetool \
+        "$L"/usr/bin/gnutls-cli "$L"/usr/bin/gnutls-cli-debug "$L"/usr/bin/gnutls-serv \
+        "$L"/usr/bin/asn1Coding "$L"/usr/bin/asn1Decoding "$L"/usr/bin/asn1Parser \
+        "$L"/usr/bin/nettle-hash "$L"/usr/bin/nettle-lfib-stream \
+        "$L"/usr/bin/nettle-pbkdf2 "$L"/usr/bin/pkcs1-conv "$L"/usr/bin/sexp-conv \
+        "$L"/usr/bin/dumpsexp "$L"/usr/bin/hmac256 "$L"/usr/bin/mpicalc \
+        "$L"/usr/bin/idn2 "$L"/usr/bin/psl "$L"/usr/bin/econftool
+  rm -f "$L"/usr/bin/gi-compile-repository "$L"/usr/bin/gi-decompile-typelib \
+        "$L"/usr/bin/gi-inspect-typelib "$L"/usr/bin/glib-compile-schemas \
+        "$L"/usr/bin/glib-compile-resources "$L"/usr/bin/gresource \
+        "$L"/usr/bin/gapplication "$L"/usr/bin/gdbus "$L"/usr/bin/gio \
+        "$L"/usr/bin/gio-querymodules "$L"/usr/bin/gsettings \
+        "$L"/usr/bin/fc-cache "$L"/usr/bin/fc-cat "$L"/usr/bin/fc-conflist \
+        "$L"/usr/bin/fc-genconf "$L"/usr/bin/fc-list "$L"/usr/bin/fc-match \
+        "$L"/usr/bin/fc-pattern "$L"/usr/bin/fc-query "$L"/usr/bin/fc-scan \
+        "$L"/usr/bin/fc-validate \
+        "$L"/usr/bin/hb-info "$L"/usr/bin/hb-raster "$L"/usr/bin/hb-shape \
+        "$L"/usr/bin/hb-subset "$L"/usr/bin/hb-vector "$L"/usr/bin/hb-view \
+        "$L"/usr/bin/gr2fonttest
+  rm -f "$L"/usr/bin/cjpeg "$L"/usr/bin/djpeg "$L"/usr/bin/jpegtran \
+        "$L"/usr/bin/rdjpgcom "$L"/usr/bin/wrjpgcom "$L"/usr/bin/tjbench \
+        "$L"/usr/bin/cwebp "$L"/usr/bin/dwebp "$L"/usr/bin/gif2webp \
+        "$L"/usr/bin/img2webp "$L"/usr/bin/webpinfo "$L"/usr/bin/webpmux \
+        "$L"/usr/bin/gifbuild "$L"/usr/bin/gifclrmp "$L"/usr/bin/giffix \
+        "$L"/usr/bin/giftext "$L"/usr/bin/giftool \
+        "$L"/usr/bin/opj_compress "$L"/usr/bin/opj_decompress "$L"/usr/bin/opj_dump \
+        "$L"/usr/bin/pngfix "$L"/usr/bin/png-fix-itxt \
+        "$L"/usr/bin/jpgicc "$L"/usr/bin/linkicc "$L"/usr/bin/psicc \
+        "$L"/usr/bin/tificc "$L"/usr/bin/transicc \
+        "$L"/usr/bin/fax2ps "$L"/usr/bin/fax2tiff "$L"/usr/bin/pal2rgb \
+        "$L"/usr/bin/ppm2tiff "$L"/usr/bin/raw2tiff "$L"/usr/bin/tiff2bw \
+        "$L"/usr/bin/tiff2pdf "$L"/usr/bin/tiff2ps "$L"/usr/bin/tiff2rgba \
+        "$L"/usr/bin/tiffcmp "$L"/usr/bin/tiffcp "$L"/usr/bin/tiffcrop \
+        "$L"/usr/bin/tiffdither "$L"/usr/bin/tiffdump "$L"/usr/bin/tiffinfo \
+        "$L"/usr/bin/tiffmedian "$L"/usr/bin/tiffset "$L"/usr/bin/tiffsplit \
+        "$L"/usr/bin/xmlwf "$L"/usr/bin/gdbm_dump "$L"/usr/bin/gdbm_load \
+        "$L"/usr/bin/gdbmtool
+  # SELinux policy tools, libcap demos and dbus's test tool: an appliance
+  # running as UID 65532 under an OCI runtime has no use for any of them.
+  rm -f "$L"/usr/bin/avcstat "$L"/usr/bin/chkcon "$L"/usr/bin/compute_av \
+        "$L"/usr/bin/compute_create "$L"/usr/bin/compute_member \
+        "$L"/usr/bin/compute_relabel "$L"/usr/bin/getconlist \
+        "$L"/usr/bin/getdefaultcon "$L"/usr/bin/getenforce \
+        "$L"/usr/bin/getfilecon "$L"/usr/bin/getpidcon "$L"/usr/bin/getpidprevcon \
+        "$L"/usr/bin/getpolicyload "$L"/usr/bin/getsebool "$L"/usr/bin/getseuser \
+        "$L"/usr/bin/matchpathcon "$L"/usr/bin/policyvers \
+        "$L"/usr/bin/sefcontext_compile "$L"/usr/bin/selabel_compare \
+        "$L"/usr/bin/selabel_digest "$L"/usr/bin/selabel_get_digests_all_partial_matches \
+        "$L"/usr/bin/selabel_lookup "$L"/usr/bin/selabel_lookup_best_match \
+        "$L"/usr/bin/selabel_partial_match "$L"/usr/bin/selinux_check_access \
+        "$L"/usr/bin/selinux_check_securetty_context "$L"/usr/bin/selinuxenabled \
+        "$L"/usr/bin/selinuxexeccon "$L"/usr/bin/sepol_check_access \
+        "$L"/usr/bin/sepol_compute_av "$L"/usr/bin/sepol_compute_member \
+        "$L"/usr/bin/sepol_compute_relabel "$L"/usr/bin/sepol_validate_transition \
+        "$L"/usr/bin/setenforce "$L"/usr/bin/setfilecon "$L"/usr/bin/togglesebool \
+        "$L"/usr/bin/validatetrans \
+        "$L"/usr/bin/capsh "$L"/usr/bin/getcap "$L"/usr/bin/getpcaps "$L"/usr/bin/setcap \
+        "$L"/usr/bin/dbus-test-tool
+  rm -f "$L"/usr/lib/*/libsepol.so*
+
+  # ── Libraries outside every app's NEEDED closure ────────────────────────
+  # Only libraries whose every consumer is removed above (or nothing at all):
+  # highway's contrib/test halves (libjxl needs libhwy only), libturbojpeg
+  # (tjbench), harfbuzz's subset/gpu/vector/raster front-end libs, the C++
+  # wrapper libs, poppler's cpp binding, libgif/libwebp mux+demux+decoder
+  # (the webp/gif CLIs), and the xcb extension libs no X client here uses
+  # (libX11 needs libxcb; libcairo needs libxcb-render and libxcb-shm).
+  rm -f "$L"/usr/lib/*/libhwy_contrib.so* "$L"/usr/lib/*/libhwy_test.so* \
+        "$L"/usr/lib/*/libturbojpeg.so* \
+        "$L"/usr/lib/*/libharfbuzz-subset.so* "$L"/usr/lib/*/libharfbuzz-gpu.so* \
+        "$L"/usr/lib/*/libharfbuzz-vector.so* "$L"/usr/lib/*/libharfbuzz-raster.so* \
+        "$L"/usr/lib/*/libgnutlsxx.so* "$L"/usr/lib/*/libtiffxx.so* \
+        "$L"/usr/lib/*/libgmpxx.so* "$L"/usr/lib/*/libpoppler-cpp.so* \
+        "$L"/usr/lib/*/libgif.so* "$L"/usr/lib/*/libwebpmux.so* \
+        "$L"/usr/lib/*/libwebpdemux.so* "$L"/usr/lib/*/libwebpdecoder.so* \
+        "$L"/usr/lib/*/libxcb-composite.so* "$L"/usr/lib/*/libxcb-damage.so* \
+        "$L"/usr/lib/*/libxcb-dbe.so* "$L"/usr/lib/*/libxcb-dpms.so* \
+        "$L"/usr/lib/*/libxcb-dri2.so* "$L"/usr/lib/*/libxcb-dri3.so* \
+        "$L"/usr/lib/*/libxcb-glx.so* "$L"/usr/lib/*/libxcb-present.so* \
+        "$L"/usr/lib/*/libxcb-randr.so* "$L"/usr/lib/*/libxcb-record.so* \
+        "$L"/usr/lib/*/libxcb-res.so* "$L"/usr/lib/*/libxcb-screensaver.so* \
+        "$L"/usr/lib/*/libxcb-shape.so* "$L"/usr/lib/*/libxcb-sync.so* \
+        "$L"/usr/lib/*/libxcb-xf86dri.so* "$L"/usr/lib/*/libxcb-xfixes.so* \
+        "$L"/usr/lib/*/libxcb-xinerama.so* "$L"/usr/lib/*/libxcb-xinput.so* \
+        "$L"/usr/lib/*/libxcb-xkb.so* "$L"/usr/lib/*/libxcb-xtest.so* \
+        "$L"/usr/lib/*/libxcb-xv.so* "$L"/usr/lib/*/libxcb-xvmc.so*
+
+# Globs relative to the image root. Every one of them is matched by an rm in
+# slim-printing-commands; the gate below and a consumer's `just verify` fail
+# if anything matches after the recipe ran. Extend both together.
+slim-printing-forbidden-paths: |
+  usr/lib/*/libasan.so*
+  usr/lib/*/libtsan.so*
+  usr/lib/*/liblsan.so*
+  usr/lib/*/libubsan.so*
+  usr/lib/*/libhwasan.so*
+  usr/lib/*/libgfortran.so*
+  usr/lib/*/libquadmath.so*
+  usr/lib/debug
+  usr/lib/*/gconv/EBCDIC-*
+  usr/lib/*/gconv/IBM*
+  usr/lib/locale/locale-archive
+  usr/share/i18n/charmaps
+  usr/share/i18n/locales
+  usr/bin/localedef
+  usr/bin/ldconfig
+  usr/bin/sln
+  usr/bin/pcre2test
+  usr/lib/*/libpcre2-16.so*
+  usr/lib/*/libpcre2-32.so*
+  usr/lib/*/libpcre2-posix.so*
+  usr/lib/*/libicu*.so*
+  usr/lib/*/libharfbuzz-icu.so*
+  usr/lib/*/libxml2.so*
+  usr/bin/uconv
+  usr/bin/genrb
+  usr/bin/icuinfo
+  usr/bin/xmllint
+  usr/bin/xmlcatalog
+  usr/lib/python3*/site-packages/libxml2mod*.so
+  usr/**/__pycache__/*.opt-1.pyc
+  usr/**/__pycache__/*.opt-2.pyc
+  usr/lib/python3*/test
+  usr/lib/python3*/ensurepip
+  usr/lib/python3*/idlelib
+  usr/lib/python3*/tkinter
+  usr/lib/python3*/_pyrepl
+  usr/lib/python3*/pydoc_data
+  usr/lib/python3*/unittest
+  usr/lib/python3*/lib2to3
+  usr/lib/python3*/config-*
+  usr/lib/python3*/site-packages/setuptools
+  usr/lib/python3*/site-packages/_distutils_hack
+  usr/lib/python3*/site-packages/mako
+  usr/lib/python3*/site-packages/markdown
+  usr/lib/python3*/site-packages/markupsafe
+  usr/bin/pydoc3*
+  usr/bin/mako-render
+  usr/bin/markdown_py
+  usr/bin/sqlite3
+  usr/bin/openssl
+  usr/bin/zstd
+  usr/bin/lz4
+  usr/bin/certtool
+  usr/bin/p11tool
+  usr/bin/gnutls-cli
+  usr/bin/gi-compile-repository
+  usr/bin/glib-compile-schemas
+  usr/bin/gdbus
+  usr/bin/fc-cache
+  usr/bin/fc-list
+  usr/bin/hb-shape
+  usr/bin/hb-subset
+  usr/bin/cjpeg
+  usr/bin/djpeg
+  usr/bin/tjbench
+  usr/bin/cwebp
+  usr/bin/tiffinfo
+  usr/bin/tiff2pdf
+  usr/bin/opj_compress
+  usr/bin/jpgicc
+  usr/bin/getenforce
+  usr/bin/sefcontext_compile
+  usr/bin/capsh
+  usr/bin/dbus-test-tool
+  usr/lib/*/libsepol.so*
+  usr/lib/*/libhwy_contrib.so*
+  usr/lib/*/libhwy_test.so*
+  usr/lib/*/libturbojpeg.so*
+  usr/lib/*/libharfbuzz-subset.so*
+  usr/lib/*/libgnutlsxx.so*
+  usr/lib/*/libtiffxx.so*
+  usr/lib/*/libgmpxx.so*
+  usr/lib/*/libpoppler-cpp.so*
+  usr/lib/*/libgif.so*
+  usr/lib/*/libwebpmux.so*
+  usr/lib/*/libwebpdemux.so*
+  usr/lib/*/libwebpdecoder.so*
+  usr/lib/*/libxcb-glx.so*
+  usr/lib/*/libxcb-xinput.so*
+  usr/lib/*/libxcb-xkb.so*
+  usr/lib/*/libxcb-randr.so*
+
+# Build-time regression gate: fails the OCI script element if any forbidden
+# path survived (a new FSDK release that moves a file, a consumer stack that
+# stages a removed tool again, or an edit to the recipe that lost a line).
+# Runs in the same sandbox right after slim-printing-commands, so the image
+# cannot be produced without it. It also checks a small keep-list every
+# printer appliance shares (the shell, coreutils, the common charsets, the
+# CA bundle; the interpreter, its plain .pyc and lzma when python3 is staged
+# at all), so a recipe typo that deletes them is caught here, not by the
+# smoke test. Nothing a single consumer keeps on purpose is required.
+slim-printing-gate-commands: |
+  set -eu
+  L=/layer
+  shopt -s nullglob globstar
+  bad=0
+  while IFS= read -r pattern; do
+    [ -n "$pattern" ] || continue
+    for match in "$L"/$pattern; do
+      [ -e "$match" ] || [ -L "$match" ] || continue
+      echo "slim-printing: forbidden path present: ${match#"$L"}" >&2
+      bad=1
+    done
+  done <<'FORBIDDEN'
+  %{slim-printing-forbidden-paths}
+  FORBIDDEN
+  # require GLOB...: at least one of the alternatives must match.
+  require() {
+    for alternative; do
+      for match in "$L"/$alternative; do
+        # Absolute symlinks (etc/pki/tls/certs/ca-bundle.crt) resolve
+        # against the sandbox root, not /layer: accept the link itself.
+        if [ -e "$match" ] || [ -L "$match" ]; then return 0; fi
+      done
+    done
+    echo "slim-printing: required path missing: $*" >&2
+    bad=1
+  }
+  require usr/bin/bash
+  require usr/bin/cat
+  require 'usr/lib/*/gconv/UTF-16.so'
+  require 'usr/lib/*/gconv/gconv-modules'
+  require etc/pki/tls/certs/ca-bundle.crt etc/ssl/certs/ca-certificates.crt
+  if [ -e "$L"/usr/bin/python3 ]; then
+    require 'usr/lib/python3*/lzma.py'
+    require 'usr/lib/python3*/lib-dynload/_lzma.*.so'
+    require 'usr/lib/python3*/json/__pycache__/__init__.cpython-*.pyc'
+    require 'usr/lib/python3*/encodings/utf_8.py'
+  fi
+  [ "$bad" -eq 0 ] || exit 1
+  echo "slim-printing: gate passed"

@@ -175,6 +175,7 @@ catalog-check:
     python3 -m unittest discover -s tests -p 'test_catalog*.py' -v
     python3 -m unittest discover -s tests -p 'test_generated*.py' -v
     python3 -m unittest discover -s tests -p 'test_verify_contract*.py' -v
+    python3 -m unittest discover -s tests -p 'test_slim*.py' -v
 
 [group('test')]
 skill-catalog-check:
