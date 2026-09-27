@@ -26,6 +26,7 @@ each, measured, and generalised the reusable parts into `include/`.
 | **Node** | devDependencies, bundled test suites, source maps, prebuilt binaries for other platforms | `node`, production `node_modules` | measure per image | node, kubestellar-hive |
 | **Go** | confirm `-trimpath` / `-buildvcs=false`; strip symbols only if debuggability allows | the single static binary | usually already minimal | skopeo, buildah, lab-runner |
 | **C daemons** | what FSDK split-rules already cover vs what leaks through the runtime domain | the daemon binary + its libs | check valkey/nginx/postgres/mariadb | valkey, nginx, postgres, mariadb |
+| **Printing** (shell-enabled appliances, junction consumers) | ICU + `libxml2`, sanitizer/Fortran runtimes, Python `.opt-N.pyc` + stdlib tail + build-only site-packages, gconv/i18n tail, unreachable runtime-gnu CLIs and libs | bash + coreutils, python3 + plain `.pyc` + lzma, curl, gpg, NSS/p11-kit/OpenSSL modules, tzdata, CA certs, terminfo, `usr/share/locale` | 407 → 299 MiB rootfs (ghostscript), 499 → 375 (hplip), 419 → 320 (gutenprint) | ghostscript-, hplip-, gutenprint-, ps-printer-app |
 
 The JVM and Python rows are the big levers — distribution choice + build-time
 artifact removal measured at ~750 MB on the fat-image path (#130), dwarfing the
@@ -57,6 +58,18 @@ both `- include/<fragment>` in the element's `variables: (@)` and the
 recipe. This keeps the OS-level SLIM recipe shared and the payload-family
 recipes per-family, without per-image copy/paste. A future family = a new
 fragment + one line in `slim.includes`.
+
+A fragment can also be consumed by another BuildStream project across a
+junction: `include/slim-printing.yml` is included by the printer applications
+as `fsdk-containers.bst:include/slim-printing.yml`, and no catalog record here
+names it. Such fragments are self-contained (one file is what the consumer
+pins and reviews), carry their own `%{slim-<family>-forbidden-paths}` list
+and `%{slim-<family>-gate-commands}` build-time gate, are listed in
+`JUNCTION_CONSUMED` in `tests/test_catalog_slim_includes.py` with the skill
+that states their consumer contract, and get a `tests/test_slim_<family>.py`
+that runs the recipe against a synthetic layer — nothing else in this
+repository ever executes them. The printing one and its measured numbers are
+in [`../../printing-base.md`](../../printing-base.md).
 
 ## Proving a strip is safe
 
