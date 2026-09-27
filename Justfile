@@ -785,7 +785,7 @@ printing-base-bundle TAG:
         -v "{{justfile_directory()}}:/src:ro" \
         -v "${BST_CACHE_DIR}:/cache:ro" \
         -v "${work}:/work:ro" \
-        "{{bst2_image}}" \
+        "${bst2_image}" \
         python3 /src/scripts/printing_base_bundle.py /cache /work/closure.txt > "${work}/files.txt"
     {{sudo_cmd}} tar -C "${BST_CACHE_DIR}" -cf "${work}/ctx/bundle.tar" -T "${work}/files.txt"
     printf 'FROM scratch\nADD bundle.tar /\n' > "${work}/ctx/Containerfile"
