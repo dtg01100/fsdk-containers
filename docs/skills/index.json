@@ -297,10 +297,12 @@
         "cups",
         "junctions",
         "cache-keys",
-        "supply-chain"
+        "supply-chain",
+        "github-runners",
+        "apparmor"
       ],
-      "description": "The shared printing base for the printer applications: printing/base.bst, cache-key isolation of its FSDK patch, the signed printing-base-devel bundle, the consumer contract, and the shared slim recipe with its gate.",
-      "version": "1.3",
+      "description": "The shared printing base for the printer applications: printing/base.bst, cache-key isolation of its FSDK patch, the signed printing-base-devel bundle, the consumer contract, the shared slim recipe, and the ubuntu-24.04 runner pin.",
+      "version": "1.4",
       "last_updated": "2026-09-27",
       "doc_type": "reference"
     },
