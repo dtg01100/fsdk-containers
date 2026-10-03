@@ -37,7 +37,7 @@ depends:
 variables:
   strip-binaries: ""
   # renovate: datasource=gitlab-tags depName=qemu-project/qemu extractVersion=^v(?<version>.+)$
-  qemu_version: 11.1.1
+  qemu_version: 11.1.2
   hardening-flags: ""
   (?):
     - arch == "x86_64":
