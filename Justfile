@@ -193,15 +193,34 @@ skill-catalog-check:
     python3 scripts/generate_skill_index.py --check
     python3 -m unittest discover -s tests -p 'test_skill_index*.py' -v
 
-# Track source references across all supported architectures (x86_64 and aarch64).
-# Usage: just track elements/lab-runner/kubectl.bst
+# Track source references: x86_64 first, then aarch64 for arch-conditional elements.
+# Usage: just track lab-runner/kubectl.bst
 [group('dev')]
 track *ELEMENTS:
     #!/usr/bin/env bash
     set -euo pipefail
-    for arch in x86_64 aarch64; do
-        just bst -o arch "${arch}" source track {{ELEMENTS}}
+    # Arch-independent sources resolve one ref per arch; track them once.
+    # Arch-conditional sources (kind:remote per-arch downloads) need a second
+    # aarch64 track or one ref goes stale -- see check_multiarch_refs parity.
+    just bst -o arch x86_64 source track {{ELEMENTS}}
+    arch_dependent=()
+    for e in {{ELEMENTS}}; do
+        # Elements are addressable either way (`lab-runner/kubectl.bst` or
+        # `elements/lab-runner/kubectl.bst`); normalise before reading the
+        # file, and fail loudly rather than misclassify a path we cannot read.
+        f="elements/${e#elements/}"
+        if [ ! -f "${f}" ]; then
+            echo "track: no such element file: ${f}" >&2
+            exit 1
+        fi
+        # Any `arch` conditional (==, !=, in) makes the refs arch-dependent.
+        if grep -qE '\barch[[:space:]]*(==|!=)|\barch[[:space:]]+in[[:space:]]' "${f}"; then
+            arch_dependent+=("$e")
+        fi
     done
+    if [ "${#arch_dependent[@]}" -gt 0 ]; then
+        just bst -o arch aarch64 source track "${arch_dependent[@]}"
+    fi
 
 # Check that multi-arch element source refs were updated symmetrically.
 # Usage: just check-refs [BASE]
@@ -760,12 +779,19 @@ publish-podman-vm:
 printing-base-key:
     @just bst show --deps none --format '%{full-key}' printing/base.bst 2>/dev/null | tail -n 1 | sed 's/\x1b\[[0-9;]*m//g'
 
+# Host-side unit tests for scripts/printing_base_bundle.py, which picks the
+# refs and CAS objects the bundle ships. Runs before the multi-hour build so a
+# broken selector fails in seconds.
+[group('test')]
+printing-base-check:
+    python3 -m unittest discover -s tests -p 'test_printing_base_bundle*.py' -v
+
 # Build printing/base.bst and printing/foomatic-db.bst in a clean local cache,
 # then load the artifacts that the build had to build as the single-layer image
 # TAG. BST_CACHE_DIR can name the cache to use (it must hold no artifacts yet);
 # without it, a temporary cache is created.
 [group('printing')]
-printing-base-bundle TAG:
+printing-base-bundle TAG: printing-base-check
     #!/usr/bin/env bash
     set -euo pipefail
     work="$(mktemp -d "${TMPDIR:-/var/tmp}/printing-base.XXXXXX")"
