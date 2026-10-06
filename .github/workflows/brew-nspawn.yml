@@ -1,12 +1,33 @@
 name: Verify brew nspawn image
 
 # The brew image is a deliberate non-distroless machine-image lane. It is
-# expensive and unrelated to OCI image publication, so verify it weekly and
-# on demand rather than on every pull request.
+# expensive (a full FSDK dev-environment rootfs) and unrelated to OCI image
+# publication, so it does not run on every pull request -- only on a weekly
+# schedule, on demand, and on pull requests that actually touch brew (gated by
+# the `paths:` filter below) so element changes are built in CI. See issue
+# #390 and follow-up #395.
 on:
   schedule:
     - cron: "30 4 * * 1"
   workflow_dispatch:
+  # Exercise the brew element on pull requests (issues #390, #395). Gated by
+  # `paths:` so an unrelated PR -- one that never touches brew -- stays cheap
+  # and skips the heavy build entirely; a change to a brew element, its
+  # upstream build inputs (`base/base-stack.bst`, the FSDK junction, or the
+  # patch queue), or its recipe runs it. `base/base-stack.bst` is included
+  # because `brew-deps.bst` depends on it and a change there changes the
+  # brew rootfs without touching any brew element directly; the FSDK junction
+  # is included because `auto-update-fsdk.yml` rewrites it on every point
+  # release and the resulting image must be exercised in CI rather than wait
+  # for the weekly run.
+  pull_request:
+    paths:
+      - elements/brew/**
+      - elements/oci/brew-nspawn.bst
+      - elements/base/**
+      - elements/freedesktop-sdk.bst
+      - patches/freedesktop-sdk
+      - Justfile
 
 concurrency:
   group: brew-nspawn-${{ github.ref }}

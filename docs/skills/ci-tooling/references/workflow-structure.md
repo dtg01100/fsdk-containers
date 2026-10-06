@@ -31,7 +31,7 @@ Supporting workflows, none of which touch publication:
 | `image-catalog.yml` | PR/push touching `catalog/**`, `elements/**`, `include/**`, or the catalog scripts/tests | the generation gate: proves the committed `elements/oci/*.bst` are what `catalog/<name>.yaml` generates, and runs the `test_catalog*`/`test_generated*`/`test_verify_contract*`/`test_slim*` and `test_printing_base_bundle*` suites. The only workflow that runs the Python tests |
 | `skill-catalog.yml` | PR/push touching `docs/skills/**` or the skill-index script/tests | proves `docs/skills/index.json`/`index.md` match the skills' front matter, and enforces the 500-line hard cap on a skill file |
 | `refresh-bst-refs.yml` | `pull_request` touching `elements/**/*.bst` | runs `bst source track` for a version bump Renovate cannot resolve a `ref:` for, and pushes the recomputed refs back onto the PR branch. The only workflow here that writes to a branch |
-| `brew-nspawn.yml` | weekly, dispatch | `just verify-brew` for the non-distroless brew machine image (detail below) |
+| `brew-nspawn.yml` | weekly, dispatch, `pull_request` (brew `paths`) | `just verify-brew` for the non-distroless brew machine image (detail below) |
 
 Both tables above are a gated inventory, not a summary.
 `tests/test_catalog_ci_inventory.py` fails if a file in
@@ -117,10 +117,19 @@ reusable workflow](https://docs.github.com/en/actions/how-tos/reuse-automations/
 and [Control concurrency of workflows and
 jobs](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
-`brew-nspawn` (machine tarball) is verified weekly and on demand by
+`brew-nspawn` (machine tarball) is verified by
 `.github/workflows/brew-nspawn.yml`; it runs `just verify-brew` without
-requiring a systemd host. `podman-vm` (bootable VM disk) is
-deliberately excluded from the OCI publishing matrix — see
+requiring a systemd host. It runs on a weekly schedule and on demand, and on
+pull requests that change brew (a `paths:` filter on `elements/brew/**`,
+`elements/oci/brew-nspawn.bst`, `elements/base/**`,
+`elements/freedesktop-sdk.bst`, `patches/freedesktop-sdk`, and `Justfile`)
+so element edits and edits to brew's upstream build inputs (base-stack and
+the FSDK junction) are exercised in CI rather than waiting for the next
+scheduled run -- see issue #390; the broader paths were added in #395 to
+cover `brew-deps.bst`'s `depends:` on `base/base-stack.bst` and the FSDK
+junction rewritten by `auto-update-fsdk.yml`. An unrelated pull request skips
+the heavy build. `podman-vm` (bootable VM disk) is deliberately excluded
+from the OCI publishing matrix — see
 [vm-podman-guest](../../vm-podman-guest/SKILL.md) for the VM guest's own build/test/publish
 pipeline.
 
