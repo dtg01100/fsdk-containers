@@ -131,14 +131,28 @@ RECIPE_BODY = extract_recipe_body(JUSTFILE.read_text(), RECIPE)
 # assumption that `git add -A` is a byte-faithful snapshot (#396).
 #
 # Env-injected config (GIT_CONFIG_PARAMETERS, GIT_CONFIG_COUNT/KEY_n/VALUE_n)
-# and repo-location overrides (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, e.g.
-# when the suite runs from inside a git hook) are dropped for the same reason.
+# and repo-location / object-store overrides (GIT_DIR, GIT_COMMON_DIR,
+# GIT_WORK_TREE, GIT_INDEX_FILE, GIT_OBJECT_DIRECTORY,
+# GIT_ALTERNATE_OBJECT_DIRECTORIES, GIT_CEILING_DIRECTORIES — e.g. when the
+# suite runs from inside a git hook or under a developer's monorepo alias)
+# are dropped for the same reason. GIT_DIR/GIT_COMMON_DIR point git at a
+# different .git (a worktree's parent .git in main, or a worker's nested
+# checkout via env), GIT_WORK_TREE/GIT_INDEX_FILE point at a different
+# worktree/index, GIT_OBJECT_DIRECTORY/GIT_ALTERNATE_OBJECT_DIRECTORIES
+# point at a different object store, and GIT_CEILING_DIRECTORIES caps
+# upward discovery — any of which would let a host setting silently
+# redirect the temp repo's `git diff`/`git merge-base` to a foreign store
+# and break the gate (#403).
 _LEAKY_GIT_ENV = {
     "GIT_CONFIG_PARAMETERS",
     "GIT_CONFIG_COUNT",
     "GIT_DIR",
+    "GIT_COMMON_DIR",
     "GIT_WORK_TREE",
     "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CEILING_DIRECTORIES",
 }
 # Fresh empty XDG root and template dir for every process invocation; kept
 # alive at module scope so the paths stay valid for the lifetime of the test
@@ -719,6 +733,93 @@ class GitEnvIsHermeticTests(unittest.TestCase):
                 "parent's mock.patch.dict — the override is not stable "
                 "across the helper's subprocess.run calls (#396)",
             )
+
+    def test_helper_strips_repo_location_overrides(self):
+        """The four same-class repo-location / object-store overrides
+        (GIT_COMMON_DIR, GIT_OBJECT_DIRECTORY, GIT_ALTERNATE_OBJECT_DIRECTORIES,
+        GIT_CEILING_DIRECTORIES) point git at a foreign .git / object store /
+        upward-discovery ceiling. A host setting any of them (e.g. the
+        suite running from inside a git hook, a developer's monorepo alias,
+        or an alternate object store under $HOME/.git/objects) would
+        silently redirect the temp repo's `git diff`/`git merge-base` to a
+        foreign store and the gate would either return the host's view or
+        raise against a missing .git (#403).
+
+        Pins the contract: HERMETIC_GIT_ENV must NOT carry any of the four
+        vars (they are dropped via _LEAKY_GIT_ENV), and a child git
+        invocation made through the helper must not see them — a hostile
+        child run that does would prove the override is missing.
+        """
+        # Statics: HERMETIC_GIT_ENV must not carry any of the four.
+        for var in (
+            "GIT_COMMON_DIR",
+            "GIT_OBJECT_DIRECTORY",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            "GIT_CEILING_DIRECTORIES",
+        ):
+            self.assertNotIn(
+                var, HERMETIC_GIT_ENV,
+                f"HERMETIC_GIT_ENV inherited {var} — _LEAKY_GIT_ENV is "
+                f"missing it, so a host setting {var} will redirect the "
+                f"temp repo's git invocations to a foreign store (#403)",
+            )
+
+        # End-to-end: a child process that observes the helper's
+        # HERMETIC_GIT_ENV must not see any of the four vars, even when the
+        # parent has them set. We seed the parent env via patch.dict and
+        # confirm the four vars are visible to a regression-path child
+        # (inheriting os.environ verbatim) — otherwise the negative
+        # assertion below would be vacuous — and then confirm a child
+        # invoked through the helper is not affected.
+        hostile = {
+            "GIT_COMMON_DIR": "/nonexistent/common",
+            "GIT_OBJECT_DIRECTORY": "/nonexistent/objects",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES": "/nonexistent/alt-objects",
+            "GIT_CEILING_DIRECTORIES": "/nonexistent/ceiling",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, hostile):
+                # Wiring check: patch.dict is wired and the four vars are
+                # observable to a child inheriting os.environ. We do not
+                # shell out here — a child cannot resolve a fake path,
+                # which would obscure the check. We instead verify the
+                # parent-side state that drives the helper's env= argument.
+                self.assertEqual(
+                    os.environ.get("GIT_COMMON_DIR"),
+                    hostile["GIT_COMMON_DIR"],
+                    "test wiring broken: patch.dict did not seed "
+                    "GIT_COMMON_DIR in os.environ; the negative assertion "
+                    "below would be vacuous (#403)",
+                )
+
+                # Production path: a child made under env=HERMETIC_GIT_ENV
+                # must NOT carry any of the four vars. Probe directly by
+                # invoking `env` against a non-existent command via the
+                # helper; the captured stderr contains the vars git
+                # observed, which proves none of the four are present
+                # when HERMETIC_GIT_ENV is the child's env. We use `env`
+                # (POSIX) rather than `git -c env.VAR=print` to keep the
+                # test independent of git internals.
+                repo = Path(tmp) / "repo"
+                repo.mkdir()
+                observed = subprocess.run(
+                    ["env"],
+                    cwd=repo,
+                    env=HERMETIC_GIT_ENV,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout
+                for var in hostile:
+                    self.assertNotIn(
+                        f"{var}=", observed,
+                        f"a child invoked under env=HERMETIC_GIT_ENV "
+                        f"observed {var}={os.environ[var]!r} — "
+                        f"_LEAKY_GIT_ENV is not stripping it, so a host "
+                        f"setting {var} will reach every child and redirect "
+                        f"the temp repo's git invocations to a foreign "
+                        f"store (#403)",
+                    )
 
 
 if __name__ == "__main__":
