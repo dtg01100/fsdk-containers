@@ -102,7 +102,7 @@ verify-brew builds the expected tarball name from it. The
 runner; nothing publishes the tarball. It runs on a weekly schedule and on
 demand, and on pull requests that change brew (a `paths:` filter covering
 `elements/brew/**`, `elements/oci/brew-nspawn.bst`, `elements/base/**`,
-`elements/freedesktop-sdk.bst`, `patches/freedesktop-sdk`, and `Justfile`),
+`elements/freedesktop-sdk.bst`, `patches/freedesktop-sdk/**`, and `Justfile`),
 so element edits and edits to brew's upstream build inputs are exercised in
 CI rather than only on the weekly schedule -- see issues #390 and #395.
 Booting (`machinectl import-tar` + `machinectl start`) requires a systemd

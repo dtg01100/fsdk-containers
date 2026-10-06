@@ -26,7 +26,7 @@ on:
       - elements/oci/brew-nspawn.bst
       - elements/base/**
       - elements/freedesktop-sdk.bst
-      - patches/freedesktop-sdk
+      - patches/freedesktop-sdk/**
       - Justfile
 
 concurrency:

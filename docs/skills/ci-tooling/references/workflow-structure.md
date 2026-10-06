@@ -122,7 +122,7 @@ jobs](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-wor
 requiring a systemd host. It runs on a weekly schedule and on demand, and on
 pull requests that change brew (a `paths:` filter on `elements/brew/**`,
 `elements/oci/brew-nspawn.bst`, `elements/base/**`,
-`elements/freedesktop-sdk.bst`, `patches/freedesktop-sdk`, and `Justfile`)
+`elements/freedesktop-sdk.bst`, `patches/freedesktop-sdk/**`, and `Justfile`)
 so element edits and edits to brew's upstream build inputs (base-stack and
 the FSDK junction) are exercised in CI rather than waiting for the next
 scheduled run -- see issue #390; the broader paths were added in #395 to
