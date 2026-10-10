@@ -181,7 +181,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Basenames (e.g. 'dmesg', 'script') that MUST NOT appear anywhere in the rootfs listing. Matched with grep -qE '(^|/)basename$'. Use for slim.extra removing a CLI by basename when the absolute path is not part of the contract; forbid_paths is the more specific form and is preferred when the path is fixed."
+          "description": "Basenames (e.g. 'dmesg', 'script') that MUST NOT appear anywhere in the rootfs listing. Matched as a fixed string (grep -qxF) against the last path component of each listing entry; regex metacharacters are literal. Use for slim.extra removing a CLI by basename when the absolute path is not part of the contract; forbid_paths is the more specific form and is preferred when the path is fixed."
         }
       }
     },

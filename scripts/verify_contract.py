@@ -107,8 +107,9 @@ def forbid_paths_for(record: dict) -> list[str]:
     shared recipe's regexes would be too narrow (a specific file path) or
     too broad (a directory the shared recipe leaves for one image but
     deletes for another). The list is taken verbatim from the record --
-    the schema rejects anything but a plain string, and a glob is matched
-    by `grep -qE` so a single line can express several paths.
+    the schema rejects anything but a plain string, and each entry is
+    matched with `grep -qxF` (fixed string, whole line), so globs and
+    regexes are NOT expanded: declare one exact path per line.
     """
     return list(record.get("gates", {}).get("forbid_paths", []))
 
@@ -116,9 +117,10 @@ def forbid_paths_for(record: dict) -> list[str]:
 def forbid_binaries_for(record: dict) -> list[str]:
     """Basenames the image must NOT contain anywhere in the rootfs.
 
-    Matched as `(^|/)basename$` so `find` does not match `find-something`
+    Matched as a fixed string against the last path component of every
+    listing entry (`grep -qxF`), so `find` does not match `find-something`
     and `usr/bin/find` is correctly rejected when the basename `find` is
-    forbidden. Use forbid_paths when the absolute path is part of the
+    forbidden. Regex metacharacters are taken literally. Use forbid_paths when the absolute path is part of the
     contract; forbid_binaries is the basename-only shorthand.
     """
     return list(record.get("gates", {}).get("forbid_binaries", []))

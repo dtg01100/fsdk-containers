@@ -443,13 +443,15 @@ verify:
 
     # Forbidden-binary gates: like forbid_paths but matched by basename
     # anywhere in the rootfs, so a record that says "no `dmesg`" does not
-    # need to know whether it lives in usr/bin or usr/sbin. `grep -qE`
-    # anchored on `(^|/)basename$` so `dmesg` does not match
-    # `dmesg-something`.
+    # need to know whether it lives in usr/bin or usr/sbin. Basenames are
+    # projected with awk and matched with `grep -qxF` (fixed string, whole
+    # line) so `dmesg` does not match `dmesg-something` and a basename with
+    # regex metacharacters (e.g. `[`) cannot error out and fail open.
     if [ -n "$FORBID_BINARIES" ]; then
+        BASENAMES="$(awk -F/ '{print $NF}' "$LISTING")"
         while read -r b; do
             [ -n "$b" ] || continue
-            if grep -qE "(^|/)${b}$" "$LISTING"; then
+            if grep -qxF -- "$b" <<< "$BASENAMES"; then
                 echo "FAIL: forbidden binary present: $b" >&2
                 failed=1
             else

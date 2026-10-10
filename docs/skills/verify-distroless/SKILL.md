@@ -145,9 +145,10 @@ grep -n 'bash' include/slim.yml                    # the explicit shell removal
 (the global regex gates the shared SLIM recipe enforces), `REQUIRE_PATHS` /
 `REQUIRE_ANY_PATHS` / `REQUIRE_BINARIES` (the presence gates the record
 declares), and `FORBID_PATHS` / `FORBID_BINARIES` (the per-image slim.extra
-gates added in #421). Adding `slim.extra` to a record means declaring the
-removed files in one of those last two lists; the recipe fails the build
-otherwise.
+gates added in #421). When adding `slim.extra` to a record, declare the
+removed files in one of those last two lists so `just verify` proves they are
+gone. This is a convention, not an automated check: nothing cross-checks
+`slim.extra` against the gates, and both gates are skipped when empty.
 
 ## Reference material
 

@@ -93,15 +93,14 @@ class GateDerivationTests(unittest.TestCase):
         self.assertNotIn("--entrypoint", argv)
         self.assertEqual(argv, ["skopeo", "--version"])
 
-    def test_no_record_declares_forbid_paths_by_default(self):
-        """Regression: most images rely on the shared SLIM recipe's regex
-        gates, so forbid_paths is empty unless slim.extra needs an assertion
-        only it can make. Proving the default is empty means a record that
-        adds an entry below is a real change, not a rename."""
-        for record in catalog.load_all():
-            with self.subTest(image=record["name"]):
-                self.assertEqual(vc.forbid_paths_for(record), [])
-                self.assertEqual(vc.forbid_binaries_for(record), [])
+    def test_forbid_gates_default_to_empty(self):
+        """A record that does not declare forbid_paths/forbid_binaries derives
+        empty lists, so the Justfile skips those gates."""
+        record = {"name": "synthetic", "gates": {}}
+        self.assertEqual(vc.forbid_paths_for(record), [])
+        self.assertEqual(vc.forbid_binaries_for(record), [])
+        self.assertEqual(vc.forbid_paths_for({"name": "synthetic"}), [])
+        self.assertEqual(vc.forbid_binaries_for({"name": "synthetic"}), [])
 
     def test_forbid_paths_come_from_the_record(self):
         """Issue #421: a record that deletes a CLI in slim.extra declares the
