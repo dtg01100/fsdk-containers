@@ -17,7 +17,7 @@ extend coverage:
 2. **Declare the smoke test in the catalog.** The `verify` recipe no longer
    carries per-image smoke branches — it derives both the podman options and the
    command arguments from each record's `smoke:` block
-   (`scripts/verify_contract.py:smoke_argv`, around line 118; the recipe reads
+   (`scripts/verify_contract.py:smoke_argv`; the recipe reads
    them at `Justfile:359`). For the common case where the image's entrypoint
    already is the binary you want to exercise, set `args` to the arguments you
    want appended:
@@ -25,8 +25,10 @@ extend coverage:
    smoke:
      args: ["--version"]
    ```
-   `catalog/skopeo.yaml`, `catalog/buildah.yaml`, `catalog/qemu-img.yaml`,
-   `catalog/python.yaml`, and `catalog/review-runtime.yaml` all use this form.
+   `catalog/buildah.yaml`, `catalog/qemu-img.yaml`, `catalog/python.yaml`, and
+   `catalog/review-runtime.yaml` all use this form. An image with no declared
+   entrypoint puts the binary first instead — `catalog/skopeo.yaml` uses
+   `args: ["skopeo", "--version"]`.
    If the primary binary is not the entrypoint, override it so `podman run`
    reaches the binary the same way a user would:
    ```yaml
