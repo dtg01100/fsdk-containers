@@ -92,7 +92,36 @@ def gates_for(record: dict) -> dict:
         "forbid": forbid,
         "require_paths": list(record.get("gates", {}).get("require_paths", [])),
         "require_binaries": require_binaries,
+        "forbid_paths": list(record.get("gates", {}).get("forbid_paths", [])),
+        "forbid_binaries": list(record.get("gates", {}).get("forbid_binaries", [])),
     }
+
+
+def forbid_paths_for(record: dict) -> list[str]:
+    """Rootfs paths the image must NOT contain (issue #421).
+
+    Per-image slim.extra removals declare the path here so `just verify` can
+    assert the file is absent from the exported tar listing. The shared
+    slim.yml/slim-printing.yml removals are still enforced by the global
+    FORBIDDEN regex gates; this is the per-image equivalent, used when the
+    shared recipe's regexes would be too narrow (a specific file path) or
+    too broad (a directory the shared recipe leaves for one image but
+    deletes for another). The list is taken verbatim from the record --
+    the schema rejects anything but a plain string, and a glob is matched
+    by `grep -qE` so a single line can express several paths.
+    """
+    return list(record.get("gates", {}).get("forbid_paths", []))
+
+
+def forbid_binaries_for(record: dict) -> list[str]:
+    """Basenames the image must NOT contain anywhere in the rootfs.
+
+    Matched as `(^|/)basename$` so `find` does not match `find-something`
+    and `usr/bin/find` is correctly rejected when the basename `find` is
+    forbidden. Use forbid_paths when the absolute path is part of the
+    contract; forbid_binaries is the basename-only shorthand.
+    """
+    return list(record.get("gates", {}).get("forbid_binaries", []))
 
 
 def require_paths_for(record: dict) -> list[str]:
@@ -175,6 +204,12 @@ def main() -> int:
     print("REQUIRE_PATHS=" + shlex.quote(chr(10).join(require_paths_for(record))))
     print("REQUIRE_ANY_PATHS=" + shlex.quote(chr(10).join(require_any_paths_for(record))))
     print(f"REQUIRE_BINARIES={shlex.quote(chr(10).join(gates['require_binaries']))}")
+    # Per-image slim.extra gate (issue #421). forbid_paths matches the rootfs
+    # path verbatim (e.g. "usr/bin/dmesg"); forbid_binaries matches the
+    # basename anywhere in the rootfs (e.g. "dmesg" -> "usr/bin/dmesg",
+    # "usr/sbin/dmesg"). Both empty when the record does not declare them.
+    print("FORBID_PATHS=" + shlex.quote(chr(10).join(forbid_paths_for(record))))
+    print("FORBID_BINARIES=" + shlex.quote(chr(10).join(forbid_binaries_for(record))))
     opts, cmd_args = smoke_split(record)
     # One argument per line, exactly like FORBID_PATTERNS/REQUIRE_PATHS above:
     # the Justfile mapfiles these into bash arrays, so an argument containing

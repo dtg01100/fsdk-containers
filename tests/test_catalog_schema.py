@@ -123,6 +123,42 @@ class SchemaTests(unittest.TestCase):
             catalog.validate(record)
         self.assertIn("slim", str(ctx.exception))
 
+    def test_forbid_paths_accepts_a_string_list(self):
+        """Issue #421: a record may declare rootfs paths that MUST NOT appear.
+
+        A slim.extra that deletes usr/bin/dmesg declares it here so `just
+        verify` proves the file is gone. The schema accepts a list of plain
+        strings; the gate engine matches them verbatim against the exported
+        tar listing (see scripts/verify_contract.py forbid_paths_for).
+        """
+        record = valid_record(
+            gates={"forbid_paths": ["usr/bin/dmesg", "usr/bin/script"]}
+        )
+        catalog.validate(record)
+
+    def test_forbid_binaries_accepts_a_string_list(self):
+        """forbid_binaries is the basename-only shorthand for forbid_paths.
+
+        A record that promises no `dmesg` does not have to know whether the
+        binary lives in usr/bin or usr/sbin; forbid_binaries matches the
+        basename anywhere in the rootfs. forbid_paths is the more specific
+        form and is preferred when the absolute path is part of the contract.
+        """
+        record = valid_record(gates={"forbid_binaries": ["dmesg", "script"]})
+        catalog.validate(record)
+
+    def test_forbid_paths_rejects_a_non_string_entry(self):
+        """forbid_paths entries are rootfs paths; the schema rejects numbers,
+        nulls, or objects to keep the gate engine simple (grep -qxF)."""
+        record = valid_record(gates={"forbid_paths": [42]})
+        with self.assertRaises(catalog.CatalogError):
+            catalog.validate(record)
+
+    def test_forbid_binaries_rejects_a_non_string_entry(self):
+        record = valid_record(gates={"forbid_binaries": [None]})
+        with self.assertRaises(catalog.CatalogError):
+            catalog.validate(record)
+
 
 if __name__ == "__main__":
     unittest.main()

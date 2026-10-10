@@ -168,6 +168,20 @@
             "type": "string"
           },
           "description": "Basenames that must appear somewhere in the rootfs listing."
+        },
+        "forbid_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Rootfs paths (no leading slash) that MUST NOT appear in the exported tar listing, checked verbatim with grep -qxF. Used by slim.extra to make per-image removals testable: a record that deletes a CLI declares the path here, and just verify fails the build if the file is still present. The shared SLIM recipe's removals are enforced by global FORBIDDEN regex gates instead, so this is only for paths the shared recipe does not already cover (issue #421)."
+        },
+        "forbid_binaries": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Basenames (e.g. 'dmesg', 'script') that MUST NOT appear anywhere in the rootfs listing. Matched with grep -qE '(^|/)basename$'. Use for slim.extra removing a CLI by basename when the absolute path is not part of the contract; forbid_paths is the more specific form and is preferred when the path is fixed."
         }
       }
     },
