@@ -159,6 +159,30 @@ class SchemaTests(unittest.TestCase):
         with self.assertRaises(catalog.CatalogError):
             catalog.validate(record)
 
+    def test_forbid_paths_rejects_a_leading_slash(self):
+        """The tar listing has no leading slash, so '/usr/bin/dmesg' could
+        never match and the gate would silently pass; reject it up front."""
+        record = valid_record(gates={"forbid_paths": ["/usr/bin/dmesg"]})
+        with self.assertRaises(catalog.CatalogError):
+            catalog.validate(record)
+
+    def test_forbid_paths_rejects_an_empty_entry(self):
+        record = valid_record(gates={"forbid_paths": [""]})
+        with self.assertRaises(catalog.CatalogError):
+            catalog.validate(record)
+
+    def test_forbid_paths_accepts_a_directory_with_trailing_slash(self):
+        catalog.validate(valid_record(gates={"forbid_paths": ["usr/share/foo/"]}))
+
+    def test_forbid_binaries_rejects_a_path(self):
+        """forbid_binaries matches basenames, which never contain '/', so a
+        path entry like 'usr/bin/dmesg' would fail open; reject it."""
+        for entry in ("usr/bin/dmesg", "/dmesg", "dmesg/", ""):
+            with self.subTest(entry=entry):
+                record = valid_record(gates={"forbid_binaries": [entry]})
+                with self.assertRaises(catalog.CatalogError):
+                    catalog.validate(record)
+
 
 if __name__ == "__main__":
     unittest.main()

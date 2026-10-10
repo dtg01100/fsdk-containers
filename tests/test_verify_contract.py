@@ -139,8 +139,8 @@ class GateDerivationTests(unittest.TestCase):
         env = buf.getvalue()
         self.assertIn('FORBID_PATHS=', env)
         self.assertIn('FORBID_BINARIES=', env)
-        # Justfile reads these into bash arrays with mapfile, so the entries
-        # must be newline-separated (not space-separated) and empty for an
+        # Justfile iterates these line by line (`while read` over a here-string),
+        # so the entries must be newline-separated (not space-separated) and empty for an
         # undeclared field. Use a synthetic record (not a real catalog file)
         # so the assertion does not couple to whichever record happens to
         # omit forbid_paths/forbid_binaries at HEAD — buildah is expected

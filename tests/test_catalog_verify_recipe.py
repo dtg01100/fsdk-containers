@@ -468,7 +468,8 @@ class ForbiddenBinaryGateTests(VerifyRecipeTestCase):
 
     def test_basename_does_not_match_a_longer_name(self):
         # `dmesg` must not be tripped by a file called "dmesg-something"; the
-        # anchored pattern `(^|/)dmesg$` requires a path terminator.
+        # gate projects each entry's basename with awk and matches it whole-line
+        # with `grep -qxF`, so only an exact basename counts.
         self.assertPassed(
             self.run_verify(
                 listing=CLEAN_LISTING + ["usr/bin/dmesg-something"],
