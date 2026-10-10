@@ -92,8 +92,6 @@ def gates_for(record: dict) -> dict:
         "forbid": forbid,
         "require_paths": list(record.get("gates", {}).get("require_paths", [])),
         "require_binaries": require_binaries,
-        "forbid_paths": list(record.get("gates", {}).get("forbid_paths", [])),
-        "forbid_binaries": list(record.get("gates", {}).get("forbid_binaries", [])),
     }
 
 

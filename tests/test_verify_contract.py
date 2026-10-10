@@ -141,8 +141,12 @@ class GateDerivationTests(unittest.TestCase):
         self.assertIn('FORBID_BINARIES=', env)
         # Justfile reads these into bash arrays with mapfile, so the entries
         # must be newline-separated (not space-separated) and empty for an
-        # undeclared field.
-        record_no_forbid = catalog.load_record(ROOT / "catalog" / "buildah.yaml")
+        # undeclared field. Use a synthetic record (not a real catalog file)
+        # so the assertion does not couple to whichever record happens to
+        # omit forbid_paths/forbid_binaries at HEAD — buildah is expected
+        # to declare them once #417 lands, but the empty-string contract
+        # is what we want to pin here.
+        record_no_forbid = {"name": "buildah", "kind": "distroless", "gates": {}}
         with mock.patch.object(vc.catalog, "load_record", return_value=record_no_forbid):
             argv = sys.argv
             sys.argv = ["verify_contract.py", "buildah", "--env"]

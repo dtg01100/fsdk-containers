@@ -439,8 +439,10 @@ class ForbiddenPathGateTests(VerifyRecipeTestCase):
 class ForbiddenBinaryGateTests(VerifyRecipeTestCase):
     """forbid_binaries is the basename-only shorthand for forbid_paths: a
     record that promises no `dmesg` does not have to know whether it lives in
-    usr/bin or usr/sbin. The gate uses grep -qE '(^|/)name$' so a basename
-    does not match a longer one (e.g. `find` does not match `find-something`).
+    usr/bin or usr/sbin. The gate projects listing basenames with `awk -F/`
+    and matches them with `grep -qxF` so a basename does not match a longer
+    one (e.g. `find` does not match `find-something`) and a regex
+    metacharacter in a basename (e.g. `[`) cannot error out and fail open.
     """
 
     def test_present_forbidden_binary_fails(self):
