@@ -77,9 +77,12 @@ Junction changes are covered by `shared_paths`.
   (issue #421). Use `forbid_paths` when the absolute path is part of the
   contract; use `forbid_binaries` when only the basename matters. An image
   with no `slim.extra` declares neither; the list is empty by default.
-- Descriptions, entrypoints, and keywords are interpolated into single-quoted
-  YAML scalars by the generator, which escapes `'` as `''`. Apostrophes are
-  safe; do not pre-quote or pre-escape values in the record.
+- Descriptions, entrypoints, `env` entries, and keywords are interpolated into
+  single-quoted YAML scalars by the generator, which escapes `'` as `''`.
+  Apostrophes are safe; do not pre-quote or pre-escape values in the record.
+- `env` (optional, `KEY=VALUE` list) becomes the OCI config `Env`. It is
+  rendered only when present, so other images' elements and cache keys do not
+  change.
 - Smoke `args` and `entrypoint_override` may contain spaces or glob characters:
   `scripts/verify_contract.py` emits them newline-delimited and the `verify`
   recipe reads them with `mapfile` into bash arrays, so every argument reaches
