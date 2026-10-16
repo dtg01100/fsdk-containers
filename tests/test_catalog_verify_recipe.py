@@ -410,6 +410,18 @@ class ForbiddenPathGateTests(VerifyRecipeTestCase):
         # satisfied, the build passes.
         self.assertPassed(self.run_verify(FORBID_PATHS="usr/bin/dmesg"))
 
+    def test_present_leading_dash_forbidden_path_fails(self):
+        self.assertFailed(
+            self.run_verify(
+                listing=CLEAN_LISTING + ["-forbidden"],
+                FORBID_PATHS="-forbidden",
+            ),
+            "forbidden path present: /-forbidden",
+        )
+
+    def test_absent_leading_dash_forbidden_path_passes(self):
+        self.assertPassed(self.run_verify(FORBID_PATHS="-forbidden"))
+
     def test_substring_does_not_match_a_path(self):
         # "usr/bin/dmesg" must not be tripped by forbidding "usr/bin/dmesg-something";
         # a substring match would falsely claim success on a slim.extra that only

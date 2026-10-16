@@ -386,7 +386,7 @@ verify:
     # Required-path gates: each entry must appear verbatim in the tar listing.
     while read -r p; do
         [ -n "$p" ] || continue
-        if ! grep -qxF "$p" "$LISTING"; then
+        if ! grep -qxF -- "$p" "$LISTING"; then
             echo "FAIL: required path missing: /$p" >&2
             failed=1
         else
@@ -400,7 +400,7 @@ verify:
         any_matched=0
         while read -r p; do
             [ -n "$p" ] || continue
-            if grep -qxF "$p" "$LISTING"; then
+            if grep -qxF -- "$p" "$LISTING"; then
                 echo "OK: CA alternative present: /$p"
                 any_matched=1
                 break
@@ -432,7 +432,7 @@ verify:
     if [ -n "$FORBID_PATHS" ]; then
         while read -r p; do
             [ -n "$p" ] || continue
-            if grep -qxF "$p" "$LISTING"; then
+            if grep -qxF -- "$p" "$LISTING"; then
                 echo "FAIL: forbidden path present: /$p" >&2
                 failed=1
             else

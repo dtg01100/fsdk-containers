@@ -150,6 +150,13 @@ removed files in one of those last two lists so `just verify` proves they are
 gone. This is a convention, not an automated check: nothing cross-checks
 `slim.extra` against the gates, and both gates are skipped when empty.
 
+Literal path and basename gates must use `grep -qxF -- "$entry"`: fixed-string
+matching does not stop grep from interpreting a leading `-` as an option.
+Without `--`, a grep error in a forbidden-path condition is mistaken for
+absence and fails open. Keep present/absent leading-dash cases in the real
+verify-recipe harness (`tests/test_catalog_verify_recipe.py`); these exercise
+the gate logic with a controlled rootfs tar, not an actual image contract.
+
 ## Reference material
 
 | File | Contents |
