@@ -27,6 +27,8 @@ f = json.loads(Path(os.environ["ALERT_FIXTURE"]).read_text())
 with open(os.environ["ALERT_CALLS"], "a") as log:
     log.write(json.dumps(args) + "\n")
 if args[0] == "api":
+    if "--slurp" in args and ("--jq" in args or "--template" in args):
+        raise SystemExit("the --slurp option is not supported with --jq or --template")
     endpoint = next(arg for arg in args if arg.startswith("repos/"))
     if endpoint.endswith("/commits/main"):
         if f.get("commit_error"):
@@ -48,6 +50,9 @@ elif args[:2] == ["issue", "view"]:
     data = {"state": f["issue_state"]}
 else:
     assert args[:2] in (["issue", "create"], ["issue", "reopen"], ["issue", "edit"], ["issue", "close"]), args
+    sys.exit(0)
+if "--jq" not in args:
+    print(json.dumps(data))
     sys.exit(0)
 result = subprocess.run(["jq", "-r", args[args.index("--jq") + 1]], input=json.dumps(data), text=True, capture_output=True)
 sys.stdout.write(result.stdout)
