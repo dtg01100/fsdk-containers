@@ -86,9 +86,10 @@ the old `failure`+`skipped` filter only listed the downstream jobs that were
 skipped because of it. On success it closes the same issue (if open) with a
 comment linking the green run, but only when the run's `head_sha` is still
 the current `main` HEAD — a re-run or late finish of an older commit must
-not close an alert a newer commit raised (#413). The guard reads
-`/commits/main` via the GitHub API and skips the close step when the
-`head_sha` differs. Keep the workflow-level concurrency group:
+not close an alert a newer commit raised. The guard reads `/commits/main`
+with `contents: read` and skips the close step if the lookup fails or the
+`head_sha` differs. Recovery comments use the run's `html_url`; the
+`workflow_run` payload has no `head_url`. Keep the concurrency group:
 without it, simultaneous failed runs can each observe no open issue and create
 duplicates. It searches all issue states and reapplies the `area/ci` and
 `priority/p1` labels whenever it reopens the issue.
