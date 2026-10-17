@@ -83,6 +83,19 @@ concurrency group: without it, simultaneous failed runs can each observe no
 open issue and create duplicates. It searches all issue states and reapplies
 the `area/ci` and `priority/p1` labels whenever it reopens the issue.
 
+The canonical alert lookup paginates the repository Issues API with `state=all`
+and matches the full title exactly, excluding pull requests. Do not take the
+first title-search result: search is fuzzy and may match an unrelated issue,
+and a fixed result limit can hide an older alert. API errors or multiple exact
+matches fail the workflow before any issue mutation; only a successful empty
+lookup permits creating a new alert.
+
+`gh api` rejects combining `--slurp` with `--jq` or `--template`. Pipe the raw
+`--paginate --slurp` JSON into external `jq -r` under `set -euo pipefail` so
+even a later-page API failure after partial output prevents issue mutation.
+Exercise the actual read-only lookup with the installed CLI as well as fixtures;
+a fake CLI must not silently accept combinations the real CLI rejects.
+
 ### Per-image OCI fan-out
 
 `build.yml` resolves `oci_images` only once, then uses a GitHub Actions matrix
